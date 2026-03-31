@@ -88,7 +88,7 @@ function App() {
       } catch {
         try {
           // Fallback when dev proxy is not active; no-cors allows connectivity check.
-          await fetch('http://localhost:8000/', {
+          await fetch('https://kunaldp379-aiagentsarena.hf.space//', {
             method: 'GET',
             mode: 'no-cors',
             cache: 'no-store',

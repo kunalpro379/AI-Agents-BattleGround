@@ -7,12 +7,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/backend-check': {
-        target: 'http://localhost:8000',
+        target: 'https://kunaldp379-aiagentsarena.hf.space/',
         changeOrigin: true,
         rewrite: () => '/',
       },
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://kunaldp379-aiagentsarena.hf.space/',
         changeOrigin: true,
       },
       '/ws': {
