@@ -353,8 +353,45 @@ function App() {
 
     const socket = new WebSocket(wsUrl)
     socketRef.current = socket
+    let hasConnected = false
+
+    const runViaHttpFallback = async () => {
+      try {
+        const response = await fetch(toApiUrl('/api/debate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: topic.trim(),
+            preferred_language: profile.preferred_language,
+            user_location: profile.user_location,
+            user_background: profile.user_background,
+            max_cycles: Number(cycles),
+            members_per_team: Number(members),
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Debate request failed (${response.status})`)
+        }
+
+        const data = await response.json()
+        const result = data?.result ?? {}
+        setTeamAView(result?.teams?.team_a ?? [])
+        setTeamBView(result?.teams?.team_b ?? [])
+        setChatEventsView(result?.chat_events ?? [])
+        setJudgeThoughtsView(result?.judge_thoughts ?? [])
+        setResultView(result)
+        setStatusText('Completed')
+      } catch (error) {
+        setStatusText('Error')
+        setErrorMessage(error.message || 'Unable to run debate')
+      } finally {
+        setRunning(false)
+      }
+    }
 
     socket.onopen = () => {
+      hasConnected = true
       socket.send(
         JSON.stringify({
           topic: topic.trim(),
@@ -401,6 +438,10 @@ function App() {
     }
 
     socket.onerror = () => {
+      if (!hasConnected) {
+        runViaHttpFallback()
+        return
+      }
       setRunning(false)
       setStatusText('Error')
     }
