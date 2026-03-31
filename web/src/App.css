@@ -9,6 +9,15 @@
   border: 1px solid #2f2f2f;
 }
 
+.exit-corner-btn {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 90;
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
 .loader-screen {
   width: 100%;
   height: 100%;
@@ -274,6 +283,16 @@ button {
   background: #080808;
 }
 
+.msg.team_a {
+  border-color: rgba(79, 125, 255, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(79, 125, 255, 0.18);
+}
+
+.msg.team_b {
+  border-color: rgba(255, 90, 90, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(255, 90, 90, 0.16);
+}
+
 .msg-meta {
   font-size: 0.75rem;
   color: #a0a0a0;
@@ -282,6 +301,14 @@ button {
 
 .speaker-name {
   font-weight: 600;
+}
+
+.msg.team_a .speaker-name {
+  color: #6d93ff;
+}
+
+.msg.team_b .speaker-name {
+  color: #ff7373;
 }
 
 .speaker-role {

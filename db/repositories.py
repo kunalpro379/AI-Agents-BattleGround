@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 from db.mongo import get_db
 
@@ -34,6 +35,24 @@ def create_arena(data: Dict[str, Any]) -> Dict[str, Any]:
     result = db.arenas.insert_one(payload)
     payload["_id"] = result.inserted_id
     return _serialize_id(payload)
+
+
+def update_arena(arena_id: str, data: Dict[str, Any]) -> Dict[str, Any] | None:
+    db = get_db()
+    updates = {
+        "name": data["name"],
+        "creator_name": data["creator_name"],
+        "description": data.get("description", ""),
+        "image_url": data.get("image_url", ""),
+    }
+    result = db.arenas.find_one_and_update(
+        {"_id": _oid(arena_id)},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not result:
+        return None
+    return _serialize_id(result)
 
 
 def arena_exists(arena_id: str) -> bool:

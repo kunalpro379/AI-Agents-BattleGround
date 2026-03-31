@@ -7,7 +7,14 @@ import traceback
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response
 
-from db.repositories import arena_exists, create_arena, list_arena_runs, list_arenas, save_debate_run
+from db.repositories import (
+    arena_exists,
+    create_arena,
+    list_arena_runs,
+    list_arenas,
+    save_debate_run,
+    update_arena,
+)
 from states.debate import ArenaCreateRequest, DebateRequest
 from workflow.graph import run
 
@@ -83,6 +90,19 @@ def get_arena_runs(arena_id: str) -> Dict[str, Any]:
         return {"ok": True, "runs": runs}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Arena runs fetch failed: {exc}") from exc
+
+
+@app.put("/api/arenas/{arena_id}")
+def put_arena(arena_id: str, payload: ArenaCreateRequest) -> Dict[str, Any]:
+    try:
+        arena = update_arena(arena_id, payload.model_dump())
+        if not arena:
+            raise HTTPException(status_code=404, detail="Arena not found")
+        return {"ok": True, "arena": arena}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Arena update failed: {exc}") from exc
 
 
 @app.websocket("/ws/debate")

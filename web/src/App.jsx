@@ -13,6 +13,7 @@ const toApiUrl = (path) => {
 function App() {
   const [isBackendReady, setIsBackendReady] = useState(false)
   const [showArenaLobby, setShowArenaLobby] = useState(true)
+  const [showProfileModal, setShowProfileModal] = useState(true)
   const [arenas, setArenas] = useState([])
   const [selectedArena, setSelectedArena] = useState(null)
   const [runs, setRuns] = useState([])
@@ -20,14 +21,32 @@ function App() {
   const [isLoadingRuns, setIsLoadingRuns] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [showCreateArenaModal, setShowCreateArenaModal] = useState(false)
+  const [showEditArenaModal, setShowEditArenaModal] = useState(false)
+  const [editingArenaId, setEditingArenaId] = useState('')
   const [arenaForm, setArenaForm] = useState({
     name: '',
     creator_name: '',
     description: '',
     image_url: '',
   })
+  const [profile, setProfile] = useState({
+    preferred_language: 'English',
+    user_location: '',
+    user_background: '',
+  })
+  const [topic, setTopic] = useState('')
+  const [cycles, setCycles] = useState(2)
+  const [members, setMembers] = useState(3)
+  const [running, setRunning] = useState(false)
+  const [statusText, setStatusText] = useState('Idle')
+  const [teamAView, setTeamAView] = useState([])
+  const [teamBView, setTeamBView] = useState([])
+  const [chatEventsView, setChatEventsView] = useState([])
+  const [judgeThoughtsView, setJudgeThoughtsView] = useState([])
+  const [resultView, setResultView] = useState(null)
   const animationContainerRef = useRef(null)
   const arenaLoadingAnimationRef = useRef(null)
+  const socketRef = useRef(null)
 
   const loadArenas = async () => {
     setIsLoadingArenas(true)
@@ -203,12 +222,13 @@ function App() {
   }, [selectedArena])
 
   const latestResult = runs[0]?.result
-  const chatEvents = latestResult?.chat_events ?? []
-  const teamA = latestResult?.teams?.team_a ?? []
-  const teamB = latestResult?.teams?.team_b ?? []
-  const judgeThoughts = latestResult?.judge_thoughts ?? []
-  const scoreA = Number(latestResult?.scores?.team_a ?? 0).toFixed(1)
-  const scoreB = Number(latestResult?.scores?.team_b ?? 0).toFixed(1)
+  const chatEvents = chatEventsView
+  const teamA = teamAView
+  const teamB = teamBView
+  const judgeThoughts = judgeThoughtsView
+  const activeResult = resultView || latestResult
+  const scoreA = Number(activeResult?.scores?.team_a ?? 0).toFixed(1)
+  const scoreB = Number(activeResult?.scores?.team_b ?? 0).toFixed(1)
   const toCoverUrl = (arena) => {
     const raw = (arena?.image_url || arena?.imageUrl || '').trim()
     if (!raw) {
@@ -260,6 +280,136 @@ function App() {
     }
   }
 
+  const handleUpdateArena = async () => {
+    if (!editingArenaId) {
+      return
+    }
+    if (!arenaForm.name.trim() || !arenaForm.creator_name.trim()) {
+      setErrorMessage('Arena name and creator name are required.')
+      return
+    }
+
+    setErrorMessage('')
+    try {
+      const response = await fetch(toApiUrl(`/api/arenas/${editingArenaId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: arenaForm.name.trim(),
+          creator_name: arenaForm.creator_name.trim(),
+          description: arenaForm.description.trim(),
+          image_url: arenaForm.image_url.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to update arena (${response.status})`)
+      }
+
+      setShowEditArenaModal(false)
+      setEditingArenaId('')
+      setArenaForm({ name: '', creator_name: '', description: '', image_url: '' })
+      await loadArenas()
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to update arena')
+    }
+  }
+
+  useEffect(() => {
+    if (!latestResult || running) {
+      return
+    }
+    setTeamAView(latestResult?.teams?.team_a ?? [])
+    setTeamBView(latestResult?.teams?.team_b ?? [])
+    setChatEventsView(latestResult?.chat_events ?? [])
+    setJudgeThoughtsView(latestResult?.judge_thoughts ?? [])
+    setResultView(latestResult ?? null)
+  }, [latestResult, running])
+
+  const wsUrl = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/debate`
+
+  const handleStop = () => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.close(1000, 'stopped-by-user')
+    }
+    setRunning(false)
+    setStatusText('Stopped')
+  }
+
+  const handleRunDebate = () => {
+    if (!selectedArena?.id) {
+      setShowArenaLobby(true)
+      return
+    }
+    if (!topic.trim() || running) {
+      return
+    }
+
+    setRunning(true)
+    setStatusText('Running Live')
+    setChatEventsView([])
+    setJudgeThoughtsView([])
+    setResultView(null)
+
+    const socket = new WebSocket(wsUrl)
+    socketRef.current = socket
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify({
+          topic: topic.trim(),
+          arena_id: selectedArena.id,
+          preferred_language: profile.preferred_language,
+          user_location: profile.user_location,
+          user_background: profile.user_background,
+          max_cycles: Number(cycles),
+          members_per_team: Number(members),
+        })
+      )
+    }
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.type === 'teams') {
+        setTeamAView(msg.team_a || [])
+        setTeamBView(msg.team_b || [])
+        return
+      }
+      if (msg.type === 'chat_event') {
+        setChatEventsView((prev) => [...prev, msg.data])
+        return
+      }
+      if (msg.type === 'judge_thought') {
+        setJudgeThoughtsView((prev) => [...prev, msg.data])
+        return
+      }
+      if (msg.type === 'score') {
+        setResultView((prev) => ({
+          ...(prev || {}),
+          scores: msg.scores,
+          winner: msg.winner,
+          judge_summary: msg.judge_summary,
+        }))
+        return
+      }
+      if (msg.type === 'run_complete') {
+        setResultView(msg.result || null)
+        setRunning(false)
+        setStatusText('Completed')
+        socket.close(1000, 'run-complete')
+      }
+    }
+
+    socket.onerror = () => {
+      setRunning(false)
+      setStatusText('Error')
+    }
+
+    socket.onclose = () => {
+      setRunning(false)
+    }
+  }
+
   return (
     <main className="app-shell">
       {!isBackendReady ? (
@@ -272,6 +422,16 @@ function App() {
         </section>
       ) : (
         <>
+          <button
+            type="button"
+            className="exit-corner-btn"
+            onClick={() => {
+              setSelectedArena(null)
+              setShowArenaLobby(true)
+            }}
+          >
+            Exit
+          </button>
           <section className="main-layout">
             <section className="panel">
               <div className="panel-header">
@@ -285,18 +445,25 @@ function App() {
 
               <div className="form-group">
                 <label>Debate Topic</label>
-                <input placeholder="e.g. Should AI replace coding interviews?" />
+                <input
+                  value={topic}
+                  onChange={(event) => setTopic(event.target.value)}
+                  placeholder="e.g. Should AI replace coding interviews?"
+                />
               </div>
               <div className="form-group">
                 <label>Rounds and Squad Size</label>
                 <div className="row">
-                  <select defaultValue="2">
+                  <select value={cycles} onChange={(event) => setCycles(Number(event.target.value))}>
                     <option value="1">1 round</option>
                     <option value="2">2 rounds</option>
                     <option value="3">3 rounds</option>
                     <option value="4">4 rounds</option>
                   </select>
-                  <select defaultValue="3">
+                  <select
+                    value={members}
+                    onChange={(event) => setMembers(Number(event.target.value))}
+                  >
                     <option value="3">3 per team</option>
                     <option value="2">2 per team</option>
                     <option value="4">4 per team</option>
@@ -304,8 +471,10 @@ function App() {
                 </div>
               </div>
               <div className="row action-row">
-                <button type="button">Run Debate</button>
-                <button type="button" className="ghost-btn-inline">
+                <button type="button" onClick={handleRunDebate} disabled={running}>
+                  Run Debate
+                </button>
+                <button type="button" className="ghost-btn-inline" onClick={handleStop}>
                   Stop Stream
                 </button>
               </div>
@@ -364,7 +533,7 @@ function App() {
                 <div className="chat-header">
                   <h2>Debate Log</h2>
                   <span className="chat-badge">
-                    {isLoadingRuns ? 'Loading' : 'Idle'}
+                    {isLoadingRuns ? 'Loading' : statusText}
                   </span>
                 </div>
                 <div className="timeline">
@@ -418,11 +587,11 @@ function App() {
                       <strong>B</strong> {scoreB}
                     </span>
                     <span className="score-pill winner-pill">
-                      Winner: {latestResult?.winner || '-'}
+                      Winner: {activeResult?.winner || '-'}
                     </span>
                   </div>
                   <div className="result-text">
-                    {latestResult?.judge_summary || 'Judge summary will appear here.'}
+                    {activeResult?.judge_summary || 'Judge summary will appear here.'}
                   </div>
                 </div>
               </div>
@@ -485,6 +654,22 @@ function App() {
                           }}
                         >
                           Join Arena
+                        </button>
+                        <button
+                          type="button"
+                          className="join-btn ghost-btn-inline"
+                          onClick={() => {
+                            setEditingArenaId(arena.id)
+                            setArenaForm({
+                              name: arena.name || '',
+                              creator_name: arena.creator_name || '',
+                              description: arena.description || '',
+                              image_url: arena.image_url || '',
+                            })
+                            setShowEditArenaModal(true)
+                          }}
+                        >
+                          Edit Arena
                         </button>
                       </div>
                     </div>
@@ -561,6 +746,143 @@ function App() {
                     onClick={() => setShowCreateArenaModal(false)}
                   >
                     Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {showEditArenaModal ? (
+            <div className="create-arena-backdrop">
+              <div className="create-arena-modal">
+                <div className="panel-header">
+                  <h1 className="create-arena-title">Edit Arena</h1>
+                  <span className="badge">update</span>
+                </div>
+
+                <div className="form-group">
+                  <label>Arena Name</label>
+                  <input
+                    value={arenaForm.name}
+                    onChange={(event) =>
+                      setArenaForm((prev) => ({ ...prev, name: event.target.value }))
+                    }
+                    placeholder="Arena name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Creator Name</label>
+                  <input
+                    value={arenaForm.creator_name}
+                    onChange={(event) =>
+                      setArenaForm((prev) => ({
+                        ...prev,
+                        creator_name: event.target.value,
+                      }))
+                    }
+                    placeholder="Creator name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <input
+                    value={arenaForm.description}
+                    onChange={(event) =>
+                      setArenaForm((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder="Description"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Image URL</label>
+                  <input
+                    value={arenaForm.image_url}
+                    onChange={(event) =>
+                      setArenaForm((prev) => ({
+                        ...prev,
+                        image_url: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                  />
+                </div>
+                <div className="row action-row">
+                  <button type="button" className="white-btn" onClick={handleUpdateArena}>
+                    Save Changes
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-btn-inline"
+                    onClick={() => {
+                      setShowEditArenaModal(false)
+                      setEditingArenaId('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {showProfileModal ? (
+            <div className="create-arena-backdrop">
+              <div className="create-arena-modal">
+                <div className="panel-header">
+                  <h1 className="create-arena-title">Your Context</h1>
+                  <span className="badge">required once</span>
+                </div>
+                <p className="muted">
+                  This helps agents speak in your language and local context.
+                </p>
+                <div className="form-group">
+                  <label>Preferred Language</label>
+                  <select
+                    value={profile.preferred_language}
+                    onChange={(event) =>
+                      setProfile((prev) => ({
+                        ...prev,
+                        preferred_language: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="English">English</option>
+                    <option value="Hindi">Hindi</option>
+                    <option value="Marathi">Marathi</option>
+                    <option value="Hinglish">Hinglish</option>
+                    <option value="Auto">Auto</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Where do you live?</label>
+                  <input
+                    value={profile.user_location}
+                    onChange={(event) =>
+                      setProfile((prev) => ({ ...prev, user_location: event.target.value }))
+                    }
+                    placeholder="e.g. Pune, Maharashtra"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Your background</label>
+                  <input
+                    value={profile.user_background}
+                    onChange={(event) =>
+                      setProfile((prev) => ({ ...prev, user_background: event.target.value }))
+                    }
+                    placeholder="e.g. Working professional"
+                  />
+                </div>
+                <div className="row action-row">
+                  <button
+                    type="button"
+                    className="white-btn"
+                    onClick={() => setShowProfileModal(false)}
+                  >
+                    Save Context
                   </button>
                 </div>
               </div>
