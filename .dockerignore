@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+node_modules/
+web/node_modules/
+web/dist/
+.cursor/
+terminals/
+agent-transcripts/
+*.log
