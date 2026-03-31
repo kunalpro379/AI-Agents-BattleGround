@@ -2,9 +2,10 @@ from pathlib import Path
 from typing import Any, Dict
 
 import asyncio
+import traceback
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, Response
 
 from db.repositories import arena_exists, create_arena, list_arena_runs, list_arenas, save_debate_run
 from states.debate import ArenaCreateRequest, DebateRequest
@@ -14,12 +15,32 @@ from workflow.graph import run
 app = FastAPI(title="Agents Battleground API", version="1.0.0")
 
 
+@app.middleware("http")
+async def normalize_double_slash_paths(request: Request, call_next):
+    # Some deployments/browsers may hit "//" accidentally; normalize to "/".
+    path = request.scope.get("path", "")
+    if path.startswith("//"):
+        request.scope["path"] = "/" + path.lstrip("/")
+    return await call_next(request)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     html_path = Path(__file__).parent / "web" / "index.html"
     if not html_path.exists():
         return "<h3>UI missing. Create api/web/index.html</h3>"
     return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/backend-check")
+def backend_check() -> Dict[str, Any]:
+    return {"ok": True}
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    # Keep browser from emitting noisy 404s in logs/console.
+    return Response(status_code=204)
 
 
 @app.post("/api/debate")
@@ -50,6 +71,8 @@ def post_arena(payload: ArenaCreateRequest) -> Dict[str, Any]:
         arena = create_arena(payload.model_dump())
         return {"ok": True, "arena": arena}
     except Exception as exc:
+        print(f"[arena-debug] create_arena failed: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Arena create failed: {exc}") from exc
 
 

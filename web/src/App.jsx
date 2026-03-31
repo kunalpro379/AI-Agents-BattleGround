@@ -4,6 +4,15 @@ import lottie from 'lottie-web'
 import './App.css'
 import aiAnimation from './assets/ai.json'
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+
+const toApiUrl = (path) => {
+  if (!API_BASE_URL) {
+    return path
+  }
+  return `${API_BASE_URL}${path}`
+}
+
 function App() {
   const [isBackendReady, setIsBackendReady] = useState(false)
   const [showArenaLobby, setShowArenaLobby] = useState(true)
@@ -28,7 +37,7 @@ function App() {
     setErrorMessage('')
 
     try {
-      const response = await fetch('/api/arenas', {
+        const response = await fetch(toApiUrl('/api/arenas'), {
         method: 'GET',
         cache: 'no-store',
       })
@@ -67,7 +76,7 @@ function App() {
       const timeoutId = setTimeout(() => controller.abort(), 2500)
 
       try {
-        const response = await fetch('/backend-check', {
+        const response = await fetch(toApiUrl('/backend-check'), {
           method: 'GET',
           cache: 'no-store',
           signal: controller.signal,
@@ -87,8 +96,8 @@ function App() {
         throw new Error('Backend not ready')
       } catch {
         try {
-          // Fallback when dev proxy is not active; no-cors allows connectivity check.
-          await fetch('https://kunaldp379-aiagentsarena.hf.space//', {
+          // Fallback when /backend-check is unavailable; probe root.
+          await fetch(toApiUrl('/'), {
             method: 'GET',
             mode: 'no-cors',
             cache: 'no-store',
@@ -175,7 +184,7 @@ function App() {
       setErrorMessage('')
 
       try {
-        const response = await fetch(`/api/arenas/${selectedArena.id}/runs`, {
+        const response = await fetch(toApiUrl(`/api/arenas/${selectedArena.id}/runs`), {
           method: 'GET',
           cache: 'no-store',
         })
@@ -231,7 +240,7 @@ function App() {
 
     setErrorMessage('')
     try {
-      const response = await fetch('/api/arenas', {
+      const response = await fetch(toApiUrl('/api/arenas'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
