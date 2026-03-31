@@ -7,6 +7,8 @@
     radial-gradient(circle at 88% 88%, rgba(91, 91, 91, 0.16) 0%, rgba(0, 0, 0, 0) 34%),
     linear-gradient(180deg, #0d0d0d 0%, #060606 100%);
   border: 1px solid #2f2f2f;
+  scrollbar-width: thin;
+  scrollbar-color: #555 #111;
 }
 
 .exit-corner-btn {
@@ -47,6 +49,7 @@
   min-height: calc(100vh - 32px);
   color: #fff;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .panel-header {
@@ -253,6 +256,7 @@ button {
   margin-bottom: 8px;
   max-height: 190px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 8px;
   border-radius: 10px;
   background: #070707;
@@ -270,9 +274,31 @@ button {
 .chat-stream {
   max-height: 440px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   gap: 8px;
   padding-right: 4px;
+}
+
+/* Unified dark scrollbar style across app surfaces */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #111;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #5a5a5a 0%, #3d3d3d 100%);
+  border: 2px solid #111;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #787878 0%, #4f4f4f 100%);
 }
 
 .msg {
@@ -407,7 +433,8 @@ button {
 .arena-modal {
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
   background: #080808;
   border: 0;
   border-radius: 0;
@@ -469,6 +496,7 @@ button {
   align-content: start;
   max-height: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 4px 14px;
 }
 
@@ -607,12 +635,38 @@ button {
 }
 
 @media (max-width: 900px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
   .main-layout {
     grid-template-columns: 1fr;
+    min-height: auto;
+    padding: 12px;
   }
 
   .split,
   .judge-grid {
     grid-template-columns: 1fr;
+  }
+
+  .panel {
+    min-height: auto;
+    max-height: none;
+  }
+
+  .arena-modal {
+    padding: 14px;
+  }
+
+  .arena-shell {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .chat-stream {
+    max-height: 52vh;
   }
 }

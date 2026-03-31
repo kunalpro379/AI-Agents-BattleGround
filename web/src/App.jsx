@@ -44,9 +44,12 @@ function App() {
   const [chatEventsView, setChatEventsView] = useState([])
   const [judgeThoughtsView, setJudgeThoughtsView] = useState([])
   const [resultView, setResultView] = useState(null)
+  const [timelineEvents, setTimelineEvents] = useState([])
   const animationContainerRef = useRef(null)
   const arenaLoadingAnimationRef = useRef(null)
   const socketRef = useRef(null)
+  const chatStreamRef = useRef(null)
+  const timelineRef = useRef(null)
 
   const loadArenas = async () => {
     setIsLoadingArenas(true)
@@ -326,6 +329,20 @@ function App() {
     setResultView(latestResult ?? null)
   }, [latestResult, running])
 
+  useEffect(() => {
+    if (!chatStreamRef.current) {
+      return
+    }
+    chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight
+  }, [chatEventsView, running])
+
+  useEffect(() => {
+    if (!timelineRef.current) {
+      return
+    }
+    timelineRef.current.scrollTop = timelineRef.current.scrollHeight
+  }, [timelineEvents, running])
+
   const wsUrl = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/debate`
 
   const handleStop = () => {
@@ -334,6 +351,7 @@ function App() {
     }
     setRunning(false)
     setStatusText('Stopped')
+    setTimelineEvents((prev) => [...prev, 'Stream stopped by user'])
   }
 
   const handleRunDebate = () => {
@@ -350,10 +368,12 @@ function App() {
     setChatEventsView([])
     setJudgeThoughtsView([])
     setResultView(null)
+    setTimelineEvents(['Connecting to debate server...'])
 
     const socket = new WebSocket(wsUrl)
     socketRef.current = socket
     let hasConnected = false
+    let runCompleted = false
 
     const runViaHttpFallback = async () => {
       try {
@@ -371,7 +391,14 @@ function App() {
         })
 
         if (!response.ok) {
-          throw new Error(`Debate request failed (${response.status})`)
+          let detail = ''
+          try {
+            const errorData = await response.json()
+            detail = errorData?.detail || errorData?.error || ''
+          } catch {
+            // Ignore parse issues and use status fallback.
+          }
+          throw new Error(detail || `Debate request failed (${response.status})`)
         }
 
         const data = await response.json()
@@ -382,9 +409,11 @@ function App() {
         setJudgeThoughtsView(result?.judge_thoughts ?? [])
         setResultView(result)
         setStatusText('Completed')
+        setTimelineEvents((prev) => [...prev, 'Run completed via HTTP fallback'])
       } catch (error) {
         setStatusText('Error')
         setErrorMessage(error.message || 'Unable to run debate')
+        setTimelineEvents((prev) => [...prev, `Error: ${error.message || 'Unable to run debate'}`])
       } finally {
         setRunning(false)
       }
@@ -392,6 +421,7 @@ function App() {
 
     socket.onopen = () => {
       hasConnected = true
+      setTimelineEvents((prev) => [...prev, 'WebSocket connected. Sending debate payload...'])
       socket.send(
         JSON.stringify({
           topic: topic.trim(),
@@ -407,17 +437,53 @@ function App() {
 
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data)
+      if (msg.type === 'error') {
+        setStatusText('Error')
+        setTimelineEvents((prev) => [...prev, `Error: ${msg.message || 'Unknown error'}`])
+        return
+      }
+      if (msg.type === 'planner') {
+        setTimelineEvents((prev) => [...prev, 'Planner ready'])
+        return
+      }
+      if (msg.type === 'sub_questions') {
+        setTimelineEvents((prev) => [...prev, 'Debate decomposed into sub-questions'])
+        return
+      }
+      if (msg.type === 'context_ready') {
+        setTimelineEvents((prev) => [...prev, 'Context fetched from web'])
+        return
+      }
+      if (msg.type === 'team_ready') {
+        setTimelineEvents((prev) => [...prev, msg.message || 'Team activity update'])
+        return
+      }
+      if (msg.type === 'agent_activity') {
+        setTimelineEvents((prev) => [...prev, `${msg.agent || 'Agent'}: ${msg.thought || ''}`])
+        return
+      }
       if (msg.type === 'teams') {
         setTeamAView(msg.team_a || [])
         setTeamBView(msg.team_b || [])
+        setTimelineEvents((prev) => [...prev, 'Teams generated'])
         return
       }
       if (msg.type === 'chat_event') {
         setChatEventsView((prev) => [...prev, msg.data])
+        if (msg.data?.speaker) {
+          setTimelineEvents((prev) => [
+            ...prev,
+            `${msg.data.speaker} (${msg.data.role || 'agent'}) spoke for ${msg.data.team || 'team'}`,
+          ])
+        }
         return
       }
       if (msg.type === 'judge_thought') {
         setJudgeThoughtsView((prev) => [...prev, msg.data])
+        setTimelineEvents((prev) => [
+          ...prev,
+          `Judge thinking: ${msg.data?.title || 'new thought'}`,
+        ])
         return
       }
       if (msg.type === 'score') {
@@ -430,23 +496,34 @@ function App() {
         return
       }
       if (msg.type === 'run_complete') {
+        runCompleted = true
         setResultView(msg.result || null)
         setRunning(false)
         setStatusText('Completed')
+        setTimelineEvents((prev) => [
+          ...prev,
+          `Run complete. Winner: ${msg.result?.winner || '-'}`,
+        ])
         socket.close(1000, 'run-complete')
       }
     }
 
     socket.onerror = () => {
       if (!hasConnected) {
+        setTimelineEvents((prev) => [...prev, 'WebSocket failed, switching to HTTP fallback...'])
         runViaHttpFallback()
         return
       }
       setRunning(false)
       setStatusText('Error')
+      setTimelineEvents((prev) => [...prev, 'WebSocket error during stream'])
     }
 
     socket.onclose = () => {
+      if (!runCompleted && running) {
+        setStatusText('Disconnected')
+        setTimelineEvents((prev) => [...prev, 'Connection closed before completion'])
+      }
       setRunning(false)
     }
   }
@@ -477,7 +554,7 @@ function App() {
             <section className="panel">
               <div className="panel-header">
                 <h1>Agents Battleground</h1>
-                <span className="badge">debate simulator</span>
+                <span className="badge">AGENTIC DEBATE</span>
               </div>
               <p className="muted">
                 Two AI teams argue in a dark room, roast each other a bit, a
@@ -577,14 +654,22 @@ function App() {
                     {isLoadingRuns ? 'Loading' : statusText}
                   </span>
                 </div>
-                <div className="timeline">
-                  <div className="timeline-event">
-                    {selectedArena
-                      ? `Loaded arena: ${selectedArena.name}`
-                      : 'Select arena from lobby'}
-                  </div>
+                <div className="timeline" ref={timelineRef}>
+                  {timelineEvents.length === 0 ? (
+                    <div className="timeline-event">
+                      {selectedArena
+                        ? `Loaded arena: ${selectedArena.name}`
+                        : 'Select arena from lobby'}
+                    </div>
+                  ) : (
+                    timelineEvents.map((item, index) => (
+                      <div key={`${item}-${index}`} className="timeline-event">
+                        {item}
+                      </div>
+                    ))
+                  )}
                 </div>
-                <div className="chat-stream">
+                <div className="chat-stream" ref={chatStreamRef}>
                   {chatEvents.length === 0 ? (
                     <div className="msg">
                       <div className="msg-meta">No messages yet</div>

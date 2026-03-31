@@ -3,5 +3,5 @@ langchain-openai
 agno
 tavily-python
 fastapi
-uvicorn
+uvicorn[standard]
 pymongo

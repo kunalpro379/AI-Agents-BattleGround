@@ -52,15 +52,20 @@ def favicon() -> Response:
 
 @app.post("/api/debate")
 def debate(payload: DebateRequest) -> Dict[str, Any]:
-    result = run(
-        topic=payload.topic.strip(),
-        preferred_language=payload.preferred_language,
-        user_location=payload.user_location,
-        user_background=payload.user_background,
-        max_cycles=payload.max_cycles,
-        members_per_team=payload.members_per_team,
-    )
-    return {"ok": True, "result": result}
+    try:
+        result = run(
+            topic=payload.topic.strip(),
+            preferred_language=payload.preferred_language,
+            user_location=payload.user_location,
+            user_background=payload.user_background,
+            max_cycles=payload.max_cycles,
+            members_per_team=payload.members_per_team,
+        )
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        print(f"[debate-debug] run failed: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Debate run failed: {exc}") from exc
 
 
 @app.get("/api/arenas")
